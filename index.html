@@ -3,41 +3,38 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cloud IP Camera</title>
+    <title>Cloud IP Camera Pro</title>
     <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #121214; color: #ffffff; text-align: center; margin: 0; padding: 20px; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; background: #121214; color: #ffffff; text-align: center; margin: 0; padding: 20px; }
         .card { max-width: 500px; margin: 20px auto; background: #1a1a24; padding: 30px; border-radius: 15px; box-shadow: 0 8px 30px rgba(0,0,0,0.5); }
-        h1 { color: #00ecb3; font-size: 26px; margin-bottom: 5px; }
-        p.subtitle { color: #888; font-size: 14px; margin-bottom: 25px; }
-        button { background: #00ecb3; color: #121214; border: none; padding: 15px 20px; font-size: 16px; font-weight: bold; border-radius: 8px; cursor: pointer; margin: 10px 0; width: 100%; transition: 0.3s; }
-        button:hover { background: #00c495; }
-        button.btn-viewer { background: #38ef7d; color: #121214; }
-        button.btn-viewer:hover { background: #2cdb6e; }
+        h1 { color: #00ecb3; font-size: 24px; margin-bottom: 5px; }
+        button { background: #00ecb3; color: #121214; border: none; padding: 15px 20px; font-size: 16px; font-weight: bold; border-radius: 8px; cursor: pointer; margin: 10px 0; width: 100%; }
+        button.btn-viewer { background: #38ef7d; }
         input { width: 100%; padding: 15px; box-sizing: border-box; background: #262636; border: 2px solid #3b3b4f; border-radius: 8px; color: #fff; font-size: 16px; margin: 10px 0; text-align: center; }
         .video-box { background: #000; border-radius: 10px; overflow: hidden; margin-top: 20px; border: 2px solid #00ecb3; display: none; }
         video { width: 100%; height: auto; display: block; }
-        .id-badge { background: #262636; padding: 15px; border-radius: 8px; font-weight: bold; color: #00ecb3; font-size: 20px; margin: 15px 0; letter-spacing: 2px; border: 1px dashed #00ecb3; }
-        .warning { font-size: 13px; color: #ff4757; margin-top: 15px; }
+        .id-badge { background: #262636; padding: 15px; border-radius: 8px; font-weight: bold; color: #00ecb3; font-size: 20px; margin: 15px 0; border: 1px dashed #00ecb3; }
+        #statusLog { background: #262636; color: #ffcc00; padding: 10px; border-radius: 6px; margin-top: 10px; font-size: 14px; display: none; font-family: monospace; }
     </style>
 </head>
 <body>
 
     <div class="card">
         <h1 id="mainTitle">🌐 CLOUD IP CAMERA</h1>
-        <p class="subtitle" id="subTitle">Kamera Pengintai P2P Vercel</p>
+        <div id="statusLog">Status: Siap</div>
         
         <div id="menu">
             <button onclick="initCamera()">📷 JADIKAN HP INI KAMERA</button>
-            <div style="margin: 20px 0; color: #555; font-size: 14px;">— ATAU TONTON KAMERA —</div>
-            <input type="text" id="targetId" placeholder="Masukkan ID Kamera di sini">
+            <div style="margin: 20px 0; color: #555;">— ATAU —</div>
+            <input type="text" id="targetId" placeholder="Masukkan ID Kamera">
             <button class="btn-viewer" onclick="initViewer()">📺 MULAI MENONTON</button>
         </div>
 
         <div id="cameraSection" style="display:none;">
             <p>Kamera Aktif! Masukkan ID ini di perangkat penonton:</p>
             <div class="id-badge" id="myId">Membuat ID...</div>
-            <p class="warning">⚠️ Biarkan layar ini tetap menyala agar kamera tidak mati.</p>
+            <p style="color: #ff4757; font-size: 12px;">⚠️ Jangan tutup browser HP Anda.</p>
         </div>
 
         <div id="videoSection" class="video-box">
@@ -49,43 +46,57 @@
         let peer;
         let localStream;
 
-        // Cek apakah ada parameter "?view=ID" di link saat web dibuka
+        // PERBAIKAN: Menggunakan 'urls' (sesuai standar wajib browser HP saat ini)
+        const peerConfig = {
+            config: {
+                'iceServers': [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    { urls: 'stun:stun2.l.google.com:19302' }
+                ]
+            }
+        };
+
+        function logStatus(pesan) {
+            const logBox = document.getElementById('statusLog');
+            logBox.style.display = 'block';
+            logBox.innerText = "Status: " + pesan;
+        }
+
         window.onload = () => {
             const urlParams = new URLSearchParams(window.location.search);
             const autoViewId = urlParams.get('view');
             
-            // Jika ada ID di link, langsung otomatis jalankan fungsi penonton
             if (autoViewId) {
-                document.getElementById('targetId').value = autoViewId;
-                // Sembunyikan judul agar lebih rapi di TikTok Studio
+                document.getElementById('menu').style.display = 'none';
                 document.getElementById('mainTitle').style.display = 'none';
-                document.getElementById('subTitle').style.display = 'none';
-                initViewer(); 
+                document.getElementById('targetId').value = autoViewId;
+                logStatus("Memicu koneksi otomatis dari Link...");
+                setTimeout(() => { initViewer(); }, 1500);
             }
         };
 
-        // FUNGSI 1: MENGAKTIFKAN KAMERA HP
         async function initCamera() {
             document.getElementById('menu').style.display = 'none';
             document.getElementById('cameraSection').style.display = 'block';
+            logStatus("Membuka kamera HP...");
 
             try {
+                // PERBAIKAN: Mengembalikan audio ke 'true' agar tidak ditolak sistem Android/iOS
                 localStream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { 
-                        facingMode: "environment",
-                        width: { ideal: 1280 },  // Resolusi HD 720p
-                        height: { ideal: 720 }
-                    }, 
+                    video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } }, 
                     audio: true 
                 });
                 
-                peer = new Peer();
+                peer = new Peer(peerConfig);
                 
                 peer.on('open', (id) => {
                     document.getElementById('myId').innerText = id;
+                    logStatus("Kamera online & standby.");
                 });
 
                 peer.on('connection', (conn) => {
+                    logStatus("Ada penonton terhubung...");
                     conn.on('data', (data) => {
                         if(data === 'minta_video') {
                             peer.call(conn.peer, localStream);
@@ -93,34 +104,52 @@
                     });
                 });
 
+                peer.on('error', (err) => {
+                    logStatus("Error: " + err.type);
+                    alert("Koneksi Terputus: " + err.type);
+                });
+
             } catch (err) {
-                alert("Gagal mengakses kamera. Pastikan izin kamera diberikan!");
+                logStatus("Gagal akses kamera: " + err.message);
+                alert("Tolong izinkan akses kamera & mic HP Anda! Error: " + err.message);
             }
         }
 
-        // FUNGSI 2: MENJADI PENONTON
         function initViewer() {
             const targetId = document.getElementById('targetId').value.trim();
-            if (!targetId) return alert("Anda harus memasukkan ID Kamera!");
-
+            if(!targetId) return alert("Masukkan ID Kamera!");
+            
             document.getElementById('menu').style.display = 'none';
-            document.getElementById('videoSection').style.display = 'block';
-
-            peer = new Peer();
+            logStatus("Menghubungkan ke jaringan...");
+            
+            peer = new Peer(peerConfig);
 
             peer.on('open', () => {
+                logStatus("Mencari Kamera dengan ID: " + targetId);
                 const conn = peer.connect(targetId);
+                
                 conn.on('open', () => {
+                    logStatus("Kamera ditemukan! Menarik video...");
                     conn.send('minta_video');
                 });
             });
 
             peer.on('call', (call) => {
+                logStatus("Menerima streaming video...");
                 call.answer();
                 call.on('stream', (remoteStream) => {
+                    logStatus("Koneksi Sukses!");
+                    setTimeout(() => { document.getElementById('statusLog').style.display = 'none'; }, 2000);
+                    document.getElementById('videoSection').style.display = 'block';
+                    
                     const video = document.getElementById('remoteVideo');
                     video.srcObject = remoteStream;
                 });
+            });
+
+            peer.on('error', (err) => {
+                logStatus("Koneksi Gagal: " + err.type);
+                alert("Gagal terhubung. Pastikan Kamera HP masih menyala.");
             });
         }
     </script>
