@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cloud IP Camera</title>
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #121214; color: #ffffff; text-align: center; margin: 0; padding: 20px; }
+        .card { max-width: 500px; margin: 20px auto; background: #1a1a24; padding: 30px; border-radius: 15px; box-shadow: 0 8px 30px rgba(0,0,0,0.5); }
+        h1 { color: #00ecb3; font-size: 26px; margin-bottom: 5px; }
+        p.subtitle { color: #888; font-size: 14px; margin-bottom: 25px; }
+        button { background: #00ecb3; color: #121214; border: none; padding: 15px 20px; font-size: 16px; font-weight: bold; border-radius: 8px; cursor: pointer; margin: 10px 0; width: 100%; transition: 0.3s; }
+        button:hover { background: #00c495; }
+        button.btn-viewer { background: #38ef7d; color: #121214; }
+        button.btn-viewer:hover { background: #2cdb6e; }
+        input { width: 100%; padding: 15px; box-sizing: border-box; background: #262636; border: 2px solid #3b3b4f; border-radius: 8px; color: #fff; font-size: 16px; margin: 10px 0; text-align: center; }
+        .video-box { background: #000; border-radius: 10px; overflow: hidden; margin-top: 20px; border: 2px solid #00ecb3; display: none; }
+        video { width: 100%; height: auto; display: block; }
+        .id-badge { background: #262636; padding: 15px; border-radius: 8px; font-weight: bold; color: #00ecb3; font-size: 20px; margin: 15px 0; letter-spacing: 2px; border: 1px dashed #00ecb3; }
+        .warning { font-size: 13px; color: #ff4757; margin-top: 15px; }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h1>🌐 CLOUD IP CAMERA</h1>
+        <p class="subtitle">Kamera Pengintai P2P Vercel</p>
+        
+        <div id="menu">
+            <button onclick="initCamera()">📷 JADIKAN HP INI KAMERA</button>
+            <div style="margin: 20px 0; color: #555; font-size: 14px;">— ATAU TONTON KAMERA —</div>
+            <input type="text" id="targetId" placeholder="Masukkan ID Kamera di sini">
+            <button class="btn-viewer" onclick="initViewer()">📺 MULAI MENONTON</button>
+        </div>
+
+        <div id="cameraSection" style="display:none;">
+            <p>Kamera Aktif! Masukkan ID ini di perangkat penonton:</p>
+            <div class="id-badge" id="myId">Membuat ID...</div>
+            <p class="warning">⚠️ Biarkan layar ini tetap menyala agar kamera tidak mati.</p>
+        </div>
+
+        <div id="videoSection" class="video-box">
+            <video id="remoteVideo" autoplay playsinline controls></video>
+        </div>
+    </div>
+
+    <script>
+        let peer;
+        let localStream;
+
+        // FUNGSI 1: MENGAKTIFKAN KAMERA HP
+        async function initCamera() {
+            document.getElementById('menu').style.display = 'none';
+            document.getElementById('cameraSection').style.display = 'block';
+
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: "environment" }, // Kamera belakang
+                    audio: true 
+                });
+                
+                peer = new Peer();
+                
+                peer.on('open', (id) => {
+                    document.getElementById('myId').innerText = id;
+                });
+
+                peer.on('connection', (conn) => {
+                    conn.on('data', (data) => {
+                        if(data === 'minta_video') {
+                            peer.call(conn.peer, localStream);
+                        }
+                    });
+                });
+
+            } catch (err) {
+                alert("Gagal mengakses kamera. Pastikan izin kamera diberikan!");
+            }
+        }
+
+        // FUNGSI 2: MENJADI PENONTON
+        function initViewer() {
+            const targetId = document.getElementById('targetId').value.trim();
+            if (!targetId) return alert("Anda harus memasukkan ID Kamera!");
+
+            document.getElementById('menu').style.display = 'none';
+            document.getElementById('videoSection').style.display = 'block';
+
+            peer = new Peer();
+
+            peer.on('open', () => {
+                const conn = peer.connect(targetId);
+                conn.on('open', () => {
+                    conn.send('minta_video');
+                });
+            });
+
+            peer.on('call', (call) => {
+                call.answer();
+                call.on('stream', (remoteStream) => {
+                    const video = document.getElementById('remoteVideo');
+                    video.srcObject = remoteStream;
+                });
+            });
+        }
+    </script>
+</body>
+</html>
