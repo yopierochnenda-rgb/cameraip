@@ -24,8 +24,8 @@
 <body>
 
     <div class="card">
-        <h1>🌐 CLOUD IP CAMERA</h1>
-        <p class="subtitle">Kamera Pengintai P2P Vercel</p>
+        <h1 id="mainTitle">🌐 CLOUD IP CAMERA</h1>
+        <p class="subtitle" id="subTitle">Kamera Pengintai P2P Vercel</p>
         
         <div id="menu">
             <button onclick="initCamera()">📷 JADIKAN HP INI KAMERA</button>
@@ -41,13 +41,28 @@
         </div>
 
         <div id="videoSection" class="video-box">
-            <video id="remoteVideo" autoplay playsinline controls></video>
+            <video id="remoteVideo" autoplay playsinline controls muted></video>
         </div>
     </div>
 
     <script>
         let peer;
         let localStream;
+
+        // Cek apakah ada parameter "?view=ID" di link saat web dibuka
+        window.onload = () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const autoViewId = urlParams.get('view');
+            
+            // Jika ada ID di link, langsung otomatis jalankan fungsi penonton
+            if (autoViewId) {
+                document.getElementById('targetId').value = autoViewId;
+                // Sembunyikan judul agar lebih rapi di TikTok Studio
+                document.getElementById('mainTitle').style.display = 'none';
+                document.getElementById('subTitle').style.display = 'none';
+                initViewer(); 
+            }
+        };
 
         // FUNGSI 1: MENGAKTIFKAN KAMERA HP
         async function initCamera() {
@@ -56,7 +71,11 @@
 
             try {
                 localStream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { facingMode: "environment" }, // Kamera belakang
+                    video: { 
+                        facingMode: "environment",
+                        width: { ideal: 1280 },  // Resolusi HD 720p
+                        height: { ideal: 720 }
+                    }, 
                     audio: true 
                 });
                 
