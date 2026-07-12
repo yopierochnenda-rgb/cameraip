@@ -3,40 +3,54 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cloud IP Camera Pro</title>
+    <title>Cloud IP Camera Pro + AI Tracker</title>
     <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    
+    <!-- Memuat Library AI -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+
     <style>
         body { font-family: 'Segoe UI', Arial, sans-serif; background: #121214; color: #ffffff; text-align: center; margin: 0; padding: 20px; }
         .card { max-width: 500px; margin: 20px auto; background: #1a1a24; padding: 30px; border-radius: 15px; box-shadow: 0 8px 30px rgba(0,0,0,0.5); }
         h1 { color: #00ecb3; font-size: 24px; margin-bottom: 5px; }
         
-        button { background: #00ecb3; color: #121214; border: none; padding: 15px 20px; font-size: 16px; font-weight: bold; border-radius: 8px; cursor: pointer; margin: 10px 0; width: 100%; }
+        button { background: #00ecb3; color: #121214; border: none; padding: 15px 20px; font-size: 16px; font-weight: bold; border-radius: 8px; cursor: pointer; margin: 10px 0; width: 100%; transition: 0.3s; }
         button.btn-viewer { background: #38ef7d; }
         button.btn-qr { background: #ff9f43; color: #fff; }
-        /* Tombol khusus rotasi */
-        button.btn-rotate { background: #546de5; color: #fff; padding: 10px 15px; font-size: 14px; width: auto; display: inline-block; margin-top: 15px; }
         
-        input { width: 100%; padding: 15px; box-sizing: border-box; background: #262636; border: 2px solid #3b3b4f; border-radius: 8px; color: #fff; font-size: 16px; margin: 10px 0; text-align: center; }
+        button.btn-control { color: #fff; padding: 10px 15px; font-size: 14px; width: auto; display: inline-block; margin: 10px 4px 0 4px; border-radius: 6px; }
+        button.btn-rotate { background: #546de5; }
+        button.btn-ai { background: #9c88ff; }
+        button.btn-track { background: #ff4757; font-weight: bold; }
         
+        input[type="text"] { width: 100%; padding: 15px; box-sizing: border-box; background: #262636; border: 2px solid #3b3b4f; border-radius: 8px; color: #fff; font-size: 16px; margin: 10px 0; text-align: center; }
+        input[type="range"] { width: 100%; margin: 15px 0; cursor: pointer; accent-color: #00ecb3; }
+        
+        /* Penting: Set overflow hidden agar saat dizoom gambarnya tidak keluar kotak */
         .video-box { background: #000; border-radius: 10px; overflow: hidden; margin-top: 20px; border: 2px solid #00ecb3; display: none; position: relative; }
         .preview-box { border-color: #ff4757; } 
         
-        /* Efek transisi halus saat video diputar */
-        video { width: 100%; height: auto; display: block; background: #000; transition: transform 0.3s ease; }
+        /* Animasi Transisi 0.5 detik agar pergerakan kamera mengikuti bola terlihat sangat mulus (Gimbal Effect) */
+        video, canvas { width: 100%; height: auto; display: block; transition: transform 0.4s ease-out, transform-origin 0.4s ease-out; }
+        
+        canvas { position: absolute; top: 0; left: 0; pointer-events: none; z-index: 10; }
         
         .id-badge { background: #262636; padding: 15px; border-radius: 8px; font-weight: bold; color: #00ecb3; font-size: 20px; margin: 15px 0; border: 1px dashed #00ecb3; }
         #statusLog { background: #262636; color: #ffcc00; padding: 10px; border-radius: 6px; margin-top: 10px; font-size: 14px; display: none; font-family: monospace; word-wrap: break-word; }
         #qrcode-container { margin: 20px auto; padding: 15px; background: white; display: inline-block; border-radius: 10px; }
+        
+        #motionAlert { display: none; background: #ff4757; color: white; padding: 10px; border-radius: 8px; font-weight: bold; font-size: 18px; margin-bottom: 10px; animation: blink 1s infinite; }
+        @keyframes blink { 50% { opacity: 0; } }
     </style>
 </head>
 <body>
 
     <div class="card">
-        <h1 id="mainTitle">🌐 CLOUD IP CAMERA</h1>
+        <h1 id="mainTitle">🌐 IP CAMERA + AI TRACKER</h1>
         <div id="statusLog">Status: Siap</div>
         
-        <!-- MENU UTAMA -->
         <div id="menu">
             <button class="btn-qr" onclick="initMonitorQR()">💻 BUKA DI LAPTOP (TAMPILKAN BARKODE)</button>
             <div style="margin: 20px 0; color: #555;">— ATAU CARA MANUAL —</div>
@@ -45,48 +59,60 @@
             <button class="btn-viewer" onclick="initViewer()">📺 MULAI MENONTON</button>
         </div>
 
-        <!-- SECTION BARKODE (LAPTOP) -->
         <div id="qrSection" style="display:none;">
             <h2 style="color: #ff9f43;">SCAN BARKODE INI</h2>
-            <p>Buka kamera bawaan HP Anda dan scan gambar di bawah:</p>
             <div id="qrcode-container"></div>
             <p style="color: #00ecb3; font-weight: bold;">Menunggu HP terhubung...</p>
         </div>
 
-        <!-- SECTION KAMERA (HP) -->
         <div id="cameraSection" style="display:none;">
             <p id="kameraTeksInfo">Masukkan ID ini di Laptop Anda:</p>
             <div class="id-badge" id="myId">Membuat ID...</div>
-            <p style="color: #ff4757; font-size: 12px; margin-bottom:10px;">⚠️ Preview Aktif. Jangan tutup layar ini.</p>
             
             <div class="video-box preview-box" style="display:block;">
                 <video id="localVideo" autoplay playsinline muted></video>
             </div>
+
+            <div id="hpControlPanel" style="display:none; background: #262636; padding: 15px; border-radius: 10px; margin-top: 15px; border: 1px solid #3b3b4f;">
+                <label style="color:#00ecb3; font-weight:bold; font-size: 16px;">🔍 Atur Zoom Lensa HP:</label>
+                <input type="range" id="hpZoomSlider">
+            </div>
         </div>
 
-        <!-- SECTION PENONTON (LAPTOP) -->
         <div id="videoSection">
+            <div id="motionAlert">⚠️ ADA GERAKAN!</div>
+            
             <div class="video-box" id="videoBoxWrapper" style="display:none;">
                 <video id="remoteVideo" autoplay playsinline controls muted></video>
+                <canvas id="aiCanvas"></canvas>
             </div>
-            <!-- Tombol Rotasi Layar -->
-            <button id="rotateBtn" class="btn-rotate" style="display:none;" onclick="rotateVideo()">🔄 Putar Gambar (90°)</button>
+            
+            <div id="controlPanel" style="display:none;">
+                <button class="btn-control btn-rotate" onclick="rotateVideo()">🔄 Putar Layar</button>
+                <button class="btn-control btn-ai" id="aiBtn" onclick="toggleAI()">🤖 Deteksi Benda</button>
+                <button class="btn-control btn-track" id="trackBtn" onclick="toggleAutoTrack()">⚽ Auto-Track Bola: OFF</button>
+                <p style="font-size: 12px; color: #aaa; margin-top: 10px;">Fitur Auto-Track butuh AI menyala.</p>
+            </div>
         </div>
     </div>
 
     <script>
         let peer;
         let localStream;
-        let currentRotation = 0; // Menyimpan status derajat putaran
-
-        const peerConfig = {
-            config: {
-                'iceServers': [
-                    { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' }
-                ]
-            }
+        let currentRotation = 0; 
+        let aiModel = null;
+        let isDetectingAI = false;
+        let isAutoTracking = false; // Status untuk melacak bola
+        
+        // Kamus terjemahan AI (Termasuk Bola)
+        const kamusBenda = {
+            "person": "Orang", "cell phone": "Handphone", "car": "Mobil", 
+            "motorcycle": "Motor", "cat": "Kucing", "dog": "Anjing", 
+            "bottle": "Botol", "cup": "Gelas", "chair": "Kursi", 
+            "sports ball": "Bola", "tv": "Televisi", "laptop": "Laptop"
         };
+
+        const peerConfig = { config: { 'iceServers': [{ urls: 'stun:stun.l.google.com:19302' }] } };
 
         function logStatus(pesan) {
             const logBox = document.getElementById('statusLog');
@@ -94,119 +120,230 @@
             logBox.innerText = "Status: " + pesan;
         }
 
-        // --- FUNGSI ROTASI VIDEO (TIPS LAPTOP) ---
+        // --- SISTEM DETEKSI BENDA & TRACKING BOLA ---
+        async function loadAI() {
+            logStatus("Mengunduh otak AI...");
+            document.getElementById('aiBtn').innerText = "⏳ Memuat AI...";
+            document.getElementById('aiBtn').disabled = true;
+            try {
+                aiModel = await cocoSsd.load();
+                logStatus("AI Berhasil Dimuat!");
+                isDetectingAI = true;
+                document.getElementById('aiBtn').innerText = "❌ Matikan AI";
+                document.getElementById('aiBtn').disabled = false;
+                runObjectDetection();
+            } catch(e) { logStatus("Gagal memuat AI."); document.getElementById('aiBtn').disabled = false; }
+        }
+
+        function toggleAI() {
+            if (isDetectingAI) {
+                isDetectingAI = false;
+                isAutoTracking = false; // Matikan tracking otomatis jika AI mati
+                document.getElementById('aiBtn').innerText = "🤖 Deteksi Benda";
+                document.getElementById('trackBtn').innerText = "⚽ Auto-Track Bola: OFF";
+                resetZoomTracking();
+                document.getElementById('aiCanvas').getContext('2d').clearRect(0, 0, 10000, 10000);
+            } else {
+                if (!aiModel) { loadAI(); } 
+                else {
+                    isDetectingAI = true;
+                    document.getElementById('aiBtn').innerText = "❌ Matikan AI";
+                    runObjectDetection();
+                }
+            }
+        }
+
+        function toggleAutoTrack() {
+            isAutoTracking = !isAutoTracking;
+            if (isAutoTracking) {
+                document.getElementById('trackBtn').innerText = "🛑 Stop Track Bola";
+                // Nyalakan AI secara otomatis jika belum nyala
+                if (!isDetectingAI) toggleAI();
+            } else {
+                document.getElementById('trackBtn').innerText = "⚽ Auto-Track Bola: OFF";
+                resetZoomTracking(); // Kembalikan posisi kamera ke normal
+            }
+        }
+
+        function resetZoomTracking() {
+            const video = document.getElementById('remoteVideo');
+            const canvas = document.getElementById('aiCanvas');
+            let scaleAndFit = currentRotation === 90 || currentRotation === 270 
+                ? `rotate(${currentRotation}deg) scale(0.75)` 
+                : `rotate(${currentRotation}deg) scale(1)`;
+                
+            video.style.transformOrigin = `center center`;
+            video.style.transform = scaleAndFit;
+            canvas.style.transformOrigin = `center center`;
+            canvas.style.transform = scaleAndFit;
+        }
+
+        async function runObjectDetection() {
+            if (!isDetectingAI || !aiModel) return;
+            
+            const video = document.getElementById('remoteVideo');
+            const canvas = document.getElementById('aiCanvas');
+            const ctx = canvas.getContext('2d');
+
+            if (video.videoWidth > 0) {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                
+                const predictions = await aiModel.detect(video);
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                let bolaDitemukan = false;
+
+                predictions.forEach(prediction => {
+                    if (prediction.score > 0.45) {
+                        const [x, y, width, height] = prediction.bbox;
+                        
+                        // Gambar Kotak (Biru muda jika bola, ungu jika lainnya)
+                        let isBola = prediction.class === 'sports ball';
+                        ctx.beginPath();
+                        ctx.rect(x, y, width, height);
+                        ctx.lineWidth = isBola ? 6 : 4;
+                        ctx.strokeStyle = isBola ? '#00ecb3' : '#9c88ff';
+                        ctx.stroke();
+                        
+                        let namaIndo = kamusBenda[prediction.class] || prediction.class;
+                        let persentase = Math.round(prediction.score * 100) + '%';
+                        
+                        ctx.fillStyle = isBola ? '#00ecb3' : '#9c88ff';
+                        ctx.fillRect(x, y > 30 ? y - 30 : 0, ctx.measureText(namaIndo).width + 70, 30);
+                        ctx.fillStyle = isBola ? '#000' : '#fff';
+                        ctx.font = '20px Arial';
+                        ctx.fillText(`${namaIndo} (${persentase})`, x + 5, y > 30 ? y - 10 : 20);
+
+                        // --- LOGIKA AUTO-TRACKING BOLA ---
+                        if (isAutoTracking && isBola) {
+                            bolaDitemukan = true;
+                            // Cari titik tengah bola
+                            let titikTengahX = x + (width / 2);
+                            let titikTengahY = y + (height / 2);
+                            
+                            // Ubah jadi persentase agar CSS paham titik pusat zoom-nya
+                            let persentaseX = (titikTengahX / canvas.width) * 100;
+                            let persentaseY = (titikTengahY / canvas.height) * 100;
+                            
+                            // Terapkan Zoom 2x Lipat dan Geser Kamera mengikuti arah bola
+                            let extraScale = currentRotation === 90 || currentRotation === 270 ? 1.5 : 2.0;
+                            
+                            video.style.transformOrigin = `${persentaseX}% ${persentaseY}%`;
+                            video.style.transform = `rotate(${currentRotation}deg) scale(${extraScale})`;
+                            
+                            canvas.style.transformOrigin = `${persentaseX}% ${persentaseY}%`;
+                            canvas.style.transform = `rotate(${currentRotation}deg) scale(${extraScale})`;
+                        }
+                    }
+                });
+
+                // Jika mode track aktif tapi bola tiba-tiba hilang (misal keluar lapangan), kembalikan zoom ke normal
+                if (isAutoTracking && !bolaDitemukan) {
+                    resetZoomTracking();
+                }
+            }
+            setTimeout(runObjectDetection, 150); // Kecepatan pelacakan sangat cepat (150ms)
+        }
+
+        // --- SISTEM DETEKSI GERAKAN ---
+        function startMotionDetection(video) {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            canvas.width = 64; canvas.height = 48; 
+            let previousFrameData = null;
+            const motionAlert = document.getElementById('motionAlert');
+            setInterval(() => {
+                if(video.paused || video.ended) return;
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                if (previousFrameData) {
+                    let diffScore = 0;
+                    for (let i = 0; i < frame.data.length; i += 4) {
+                        diffScore += Math.abs(frame.data[i] - previousFrameData[i]) + Math.abs(frame.data[i+1] - previousFrameData[i+1]) + Math.abs(frame.data[i+2] - previousFrameData[i+2]);
+                    }
+                    if (diffScore > 100000) { 
+                        motionAlert.style.display = 'block';
+                        clearTimeout(window.motionTimeout);
+                        window.motionTimeout = setTimeout(() => { motionAlert.style.display = 'none'; }, 1500);
+                    }
+                }
+                previousFrameData = frame.data;
+            }, 300);
+        }
+
         function rotateVideo() {
             currentRotation = (currentRotation + 90) % 360;
-            const video = document.getElementById('remoteVideo');
-            
-            // Putar video menggunakan CSS transform
-            if (currentRotation === 90 || currentRotation === 270) {
-                video.style.transform = `rotate(${currentRotation}deg) scale(0.75)`; // Perkecil sedikit agar tidak terpotong bingkai
-                video.style.objectFit = "contain";
-            } else {
-                video.style.transform = `rotate(${currentRotation}deg) scale(1)`;
-                video.style.objectFit = "cover";
+            resetZoomTracking(); // Reset zoom setiap kali rotasi berubah
+        }
+
+        function setupHPZoom() {
+            const track = localStream.getVideoTracks()[0];
+            const capabilities = track.getCapabilities();
+            if ('zoom' in capabilities) {
+                document.getElementById('hpControlPanel').style.display = 'block';
+                const zSlider = document.getElementById('hpZoomSlider');
+                zSlider.min = capabilities.zoom.min; zSlider.max = capabilities.zoom.max; zSlider.step = capabilities.zoom.step;
+                zSlider.value = track.getSettings().zoom || capabilities.zoom.min;
+                zSlider.oninput = async (e) => { await track.applyConstraints({ advanced: [{ zoom: parseFloat(e.target.value) }] }); };
             }
-            logStatus("Rotasi Layar: " + currentRotation + "°");
         }
 
         window.onload = () => {
-            const urlParams = new URLSearchParams(window.location.search);
-            const autoSendToId = urlParams.get('scan');
-            const autoViewId = urlParams.get('view');
-            
+            const autoSendToId = new URLSearchParams(window.location.search).get('scan');
             if (autoSendToId) {
                 document.getElementById('menu').style.display = 'none';
-                document.getElementById('mainTitle').style.display = 'none';
-                logStatus("Barkode terdeteksi! Mengaktifkan kamera...");
                 setTimeout(() => { initCameraAndSend(autoSendToId); }, 1000);
-            } else if (autoViewId) {
-                document.getElementById('menu').style.display = 'none';
-                document.getElementById('targetId').value = autoViewId;
-                logStatus("Memicu koneksi otomatis...");
-                setTimeout(() => { initViewer(); }, 1000);
             }
         };
 
         function initMonitorQR() {
             document.getElementById('menu').style.display = 'none';
             document.getElementById('qrSection').style.display = 'block';
-            logStatus("Membuat Barkode...");
-
             peer = new Peer(null, peerConfig);
-
-            peer.on('open', (id) => {
-                logStatus("Siap! Silakan scan barkode dengan kamera HP.");
-                const currentUrl = window.location.href.split('?')[0]; 
-                const scanLink = currentUrl + "?scan=" + id;
-
-                new QRCode(document.getElementById("qrcode-container"), {
-                    text: scanLink,
-                    width: 200,
-                    height: 200,
-                    colorDark : "#000000",
-                    colorLight : "#ffffff",
-                    correctLevel : QRCode.CorrectLevel.H
-                });
-            });
-
+            peer.on('open', (id) => { new QRCode(document.getElementById("qrcode-container"), { text: window.location.href.split('?')[0] + "?scan=" + id, width: 200, height: 200 }); });
             peer.on('call', (call) => {
-                logStatus("Menerima video dari HP...");
                 document.getElementById('qrSection').style.display = 'none';
                 document.getElementById('videoBoxWrapper').style.display = 'block';
-                document.getElementById('rotateBtn').style.display = 'inline-block'; // Tampilkan tombol rotasi
-                
+                document.getElementById('controlPanel').style.display = 'block'; 
                 call.answer();
-                call.on('stream', (remoteStream) => {
-                    logStatus("KONEKSI SUKSES!");
-                    setTimeout(() => { document.getElementById('statusLog').style.display = 'none'; }, 2000);
-                    document.getElementById('remoteVideo').srcObject = remoteStream;
+                call.on('stream', (rStream) => {
+                    const videoEl = document.getElementById('remoteVideo');
+                    videoEl.srcObject = rStream;
+                    videoEl.addEventListener('play', () => { startMotionDetection(videoEl); });
                 });
             });
         }
 
-        async function initCameraAndSend(targetLaptopId) {
+        const cameraConstraints = { video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 }, advanced: [{ focusMode: "continuous" }] }, audio: true };
+
+        async function initCameraAndSend(targetId) {
             document.getElementById('cameraSection').style.display = 'block';
-            document.getElementById('myId').style.display = 'none';
-            document.getElementById('kameraTeksInfo').innerText = "Streaming ke Laptop sedang berjalan...";
-
             try {
-                // Minta resolusi HD 1280x720 (Landscape)
-                localStream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } }, 
-                    audio: true 
-                });
-                
+                localStream = await navigator.mediaDevices.getUserMedia(cameraConstraints);
                 document.getElementById('localVideo').srcObject = localStream;
-                logStatus("Kamera menyala. Menyambungkan ke Laptop...");
-
+                setupHPZoom(); 
                 peer = new Peer(null, peerConfig);
-                peer.on('open', (id) => {
-                    peer.call(targetLaptopId, localStream);
-                });
-
-            } catch (err) {
-                logStatus("Akses Ditolak: " + err.message);
-                alert("Gagal akses kamera!");
-            }
+                peer.on('open', () => { peer.call(targetId, localStream); });
+            } catch (err) { alert("Akses kamera ditolak."); }
         }
 
-        // --- MANUALLY RETAINED ---
         async function initCamera() {
             document.getElementById('menu').style.display = 'none';
             document.getElementById('cameraSection').style.display = 'block';
             try {
-                localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: true });
+                localStream = await navigator.mediaDevices.getUserMedia(cameraConstraints);
                 document.getElementById('localVideo').srcObject = localStream;
+                setupHPZoom(); 
                 peer = new Peer(null, peerConfig);
                 peer.on('open', (id) => { document.getElementById('myId').innerText = id; });
-                peer.on('connection', (conn) => { conn.on('data', (data) => { if(data === 'minta_video') peer.call(conn.peer, localStream); }); });
+                peer.on('connection', (conn) => { conn.on('data', (d) => { if(d==='minta_video') peer.call(conn.peer, localStream); }); });
             } catch (err) { alert("Gagal akses kamera!"); }
         }
 
         function initViewer() {
             const targetId = document.getElementById('targetId').value.trim();
-            if(!targetId) return alert("Masukkan ID Kamera!");
+            if(!targetId) return;
             document.getElementById('menu').style.display = 'none';
             peer = new Peer(null, peerConfig);
             peer.on('open', () => {
@@ -216,8 +353,12 @@
             peer.on('call', (call) => {
                 call.answer(); 
                 document.getElementById('videoBoxWrapper').style.display = 'block';
-                document.getElementById('rotateBtn').style.display = 'inline-block';
-                call.on('stream', (remoteStream) => { document.getElementById('remoteVideo').srcObject = remoteStream; });
+                document.getElementById('controlPanel').style.display = 'block';
+                call.on('stream', (rStream) => { 
+                    const videoEl = document.getElementById('remoteVideo');
+                    videoEl.srcObject = rStream;
+                    videoEl.addEventListener('play', () => { startMotionDetection(videoEl); });
+                });
             });
         }
     </script>
