@@ -4,9 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cloud IP Camera Pro</title>
-    <!-- Library PeerJS untuk Video -->
     <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-    <!-- Library untuk membuat QR Code otomatis -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
         body { font-family: 'Segoe UI', Arial, sans-serif; background: #121214; color: #ffffff; text-align: center; margin: 0; padding: 20px; }
@@ -15,18 +13,20 @@
         
         button { background: #00ecb3; color: #121214; border: none; padding: 15px 20px; font-size: 16px; font-weight: bold; border-radius: 8px; cursor: pointer; margin: 10px 0; width: 100%; }
         button.btn-viewer { background: #38ef7d; }
-        button.btn-qr { background: #ff9f43; color: #fff; } /* Warna Tombol QR */
+        button.btn-qr { background: #ff9f43; color: #fff; }
+        /* Tombol khusus rotasi */
+        button.btn-rotate { background: #546de5; color: #fff; padding: 10px 15px; font-size: 14px; width: auto; display: inline-block; margin-top: 15px; }
         
         input { width: 100%; padding: 15px; box-sizing: border-box; background: #262636; border: 2px solid #3b3b4f; border-radius: 8px; color: #fff; font-size: 16px; margin: 10px 0; text-align: center; }
         
-        .video-box { background: #000; border-radius: 10px; overflow: hidden; margin-top: 20px; border: 2px solid #00ecb3; display: none; }
+        .video-box { background: #000; border-radius: 10px; overflow: hidden; margin-top: 20px; border: 2px solid #00ecb3; display: none; position: relative; }
         .preview-box { border-color: #ff4757; } 
-        video { width: 100%; height: auto; display: block; background: #000; }
+        
+        /* Efek transisi halus saat video diputar */
+        video { width: 100%; height: auto; display: block; background: #000; transition: transform 0.3s ease; }
         
         .id-badge { background: #262636; padding: 15px; border-radius: 8px; font-weight: bold; color: #00ecb3; font-size: 20px; margin: 15px 0; border: 1px dashed #00ecb3; }
         #statusLog { background: #262636; color: #ffcc00; padding: 10px; border-radius: 6px; margin-top: 10px; font-size: 14px; display: none; font-family: monospace; word-wrap: break-word; }
-        
-        /* Desain Kotak QR Code agar mudah di-scan */
         #qrcode-container { margin: 20px auto; padding: 15px; background: white; display: inline-block; border-radius: 10px; }
     </style>
 </head>
@@ -45,7 +45,7 @@
             <button class="btn-viewer" onclick="initViewer()">📺 MULAI MENONTON</button>
         </div>
 
-        <!-- SECTION TAMPILKAN QR (LAPTOP) -->
+        <!-- SECTION BARKODE (LAPTOP) -->
         <div id="qrSection" style="display:none;">
             <h2 style="color: #ff9f43;">SCAN BARKODE INI</h2>
             <p>Buka kamera bawaan HP Anda dan scan gambar di bawah:</p>
@@ -65,14 +65,19 @@
         </div>
 
         <!-- SECTION PENONTON (LAPTOP) -->
-        <div id="videoSection" class="video-box">
-            <video id="remoteVideo" autoplay playsinline controls muted></video>
+        <div id="videoSection">
+            <div class="video-box" id="videoBoxWrapper" style="display:none;">
+                <video id="remoteVideo" autoplay playsinline controls muted></video>
+            </div>
+            <!-- Tombol Rotasi Layar -->
+            <button id="rotateBtn" class="btn-rotate" style="display:none;" onclick="rotateVideo()">🔄 Putar Gambar (90°)</button>
         </div>
     </div>
 
     <script>
         let peer;
         let localStream;
+        let currentRotation = 0; // Menyimpan status derajat putaran
 
         const peerConfig = {
             config: {
@@ -87,22 +92,35 @@
             const logBox = document.getElementById('statusLog');
             logBox.style.display = 'block';
             logBox.innerText = "Status: " + pesan;
-            console.log("Status:", pesan);
+        }
+
+        // --- FUNGSI ROTASI VIDEO (TIPS LAPTOP) ---
+        function rotateVideo() {
+            currentRotation = (currentRotation + 90) % 360;
+            const video = document.getElementById('remoteVideo');
+            
+            // Putar video menggunakan CSS transform
+            if (currentRotation === 90 || currentRotation === 270) {
+                video.style.transform = `rotate(${currentRotation}deg) scale(0.75)`; // Perkecil sedikit agar tidak terpotong bingkai
+                video.style.objectFit = "contain";
+            } else {
+                video.style.transform = `rotate(${currentRotation}deg) scale(1)`;
+                video.style.objectFit = "cover";
+            }
+            logStatus("Rotasi Layar: " + currentRotation + "°");
         }
 
         window.onload = () => {
             const urlParams = new URLSearchParams(window.location.search);
-            const autoSendToId = urlParams.get('scan'); // Mode jika HP scan QR
-            const autoViewId = urlParams.get('view');   // Mode manual link lama
+            const autoSendToId = urlParams.get('scan');
+            const autoViewId = urlParams.get('view');
             
             if (autoSendToId) {
-                // Skenario 1: HP baru saja nge-scan QR Code dari Laptop
                 document.getElementById('menu').style.display = 'none';
                 document.getElementById('mainTitle').style.display = 'none';
                 logStatus("Barkode terdeteksi! Mengaktifkan kamera...");
                 setTimeout(() => { initCameraAndSend(autoSendToId); }, 1000);
             } else if (autoViewId) {
-                // Skenario 2: Cara manual link
                 document.getElementById('menu').style.display = 'none';
                 document.getElementById('targetId').value = autoViewId;
                 logStatus("Memicu koneksi otomatis...");
@@ -110,7 +128,6 @@
             }
         };
 
-        // --- FITUR BARU: GENERATE QR DI LAPTOP ---
         function initMonitorQR() {
             document.getElementById('menu').style.display = 'none';
             document.getElementById('qrSection').style.display = 'block';
@@ -120,12 +137,9 @@
 
             peer.on('open', (id) => {
                 logStatus("Siap! Silakan scan barkode dengan kamera HP.");
-                
-                // Buat link yang mengandung ID Laptop ini
                 const currentUrl = window.location.href.split('?')[0]; 
                 const scanLink = currentUrl + "?scan=" + id;
 
-                // Tampilkan sebagai QR Code
                 new QRCode(document.getElementById("qrcode-container"), {
                     text: scanLink,
                     width: 200,
@@ -136,16 +150,13 @@
                 });
             });
 
-            // Laptop menunggu HP menelepon
             peer.on('call', (call) => {
                 logStatus("Menerima video dari HP...");
-                
-                // Sembunyikan QR Code, Tampilkan Video
                 document.getElementById('qrSection').style.display = 'none';
-                document.getElementById('videoSection').style.display = 'block';
+                document.getElementById('videoBoxWrapper').style.display = 'block';
+                document.getElementById('rotateBtn').style.display = 'inline-block'; // Tampilkan tombol rotasi
                 
-                call.answer(); // Angkat telepon dari HP
-                
+                call.answer();
                 call.on('stream', (remoteStream) => {
                     logStatus("KONEKSI SUKSES!");
                     setTimeout(() => { document.getElementById('statusLog').style.display = 'none'; }, 2000);
@@ -154,13 +165,13 @@
             });
         }
 
-        // --- FITUR BARU: HP OTOMATIS TEMBAK VIDEO KE LAPTOP ---
         async function initCameraAndSend(targetLaptopId) {
             document.getElementById('cameraSection').style.display = 'block';
-            document.getElementById('myId').style.display = 'none'; // Sembunyikan badge ID
+            document.getElementById('myId').style.display = 'none';
             document.getElementById('kameraTeksInfo').innerText = "Streaming ke Laptop sedang berjalan...";
 
             try {
+                // Minta resolusi HD 1280x720 (Landscape)
                 localStream = await navigator.mediaDevices.getUserMedia({ 
                     video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } }, 
                     audio: true 
@@ -170,72 +181,43 @@
                 logStatus("Kamera menyala. Menyambungkan ke Laptop...");
 
                 peer = new Peer(null, peerConfig);
-                
                 peer.on('open', (id) => {
-                    // Langsung telepon Laptop dan kirim video
-                    const call = peer.call(targetLaptopId, localStream);
-                    
-                    call.on('error', (err) => {
-                        logStatus("Error Pengiriman: " + err.type);
-                    });
+                    peer.call(targetLaptopId, localStream);
                 });
 
             } catch (err) {
                 logStatus("Akses Ditolak: " + err.message);
-                alert("Gagal. Pastikan Anda memberi izin kamera!");
+                alert("Gagal akses kamera!");
             }
         }
 
-        // --- CARA MANUAL (MASIH DIPERTAHANKAN) ---
+        // --- MANUALLY RETAINED ---
         async function initCamera() {
             document.getElementById('menu').style.display = 'none';
             document.getElementById('cameraSection').style.display = 'block';
-            logStatus("Meminta izin kamera...");
-
             try {
-                localStream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } }, 
-                    audio: true 
-                });
+                localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: true });
                 document.getElementById('localVideo').srcObject = localStream;
-                logStatus("Kamera menyala. Membuat server...");
-
                 peer = new Peer(null, peerConfig);
-                
-                peer.on('open', (id) => {
-                    document.getElementById('myId').innerText = id;
-                    logStatus("Kamera standby. Menunggu Laptop...");
-                });
-
-                peer.on('connection', (conn) => {
-                    conn.on('data', (data) => {
-                        if(data === 'minta_video') peer.call(conn.peer, localStream);
-                    });
-                });
+                peer.on('open', (id) => { document.getElementById('myId').innerText = id; });
+                peer.on('connection', (conn) => { conn.on('data', (data) => { if(data === 'minta_video') peer.call(conn.peer, localStream); }); });
             } catch (err) { alert("Gagal akses kamera!"); }
         }
 
         function initViewer() {
             const targetId = document.getElementById('targetId').value.trim();
             if(!targetId) return alert("Masukkan ID Kamera!");
-            
             document.getElementById('menu').style.display = 'none';
-            logStatus("Mempersiapkan jaringan...");
-            
             peer = new Peer(null, peerConfig);
-
             peer.on('open', () => {
                 const conn = peer.connect(targetId, { reliable: true });
                 conn.on('open', () => { conn.send('minta_video'); });
             });
-
             peer.on('call', (call) => {
                 call.answer(); 
-                call.on('stream', (remoteStream) => {
-                    logStatus("KONEKSI SUKSES!");
-                    document.getElementById('videoSection').style.display = 'block';
-                    document.getElementById('remoteVideo').srcObject = remoteStream;
-                });
+                document.getElementById('videoBoxWrapper').style.display = 'block';
+                document.getElementById('rotateBtn').style.display = 'inline-block';
+                call.on('stream', (remoteStream) => { document.getElementById('remoteVideo').srcObject = remoteStream; });
             });
         }
     </script>
