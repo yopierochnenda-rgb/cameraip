@@ -12,10 +12,14 @@
         button { background: #00ecb3; color: #121214; border: none; padding: 15px 20px; font-size: 16px; font-weight: bold; border-radius: 8px; cursor: pointer; margin: 10px 0; width: 100%; }
         button.btn-viewer { background: #38ef7d; }
         input { width: 100%; padding: 15px; box-sizing: border-box; background: #262636; border: 2px solid #3b3b4f; border-radius: 8px; color: #fff; font-size: 16px; margin: 10px 0; text-align: center; }
+        
         .video-box { background: #000; border-radius: 10px; overflow: hidden; margin-top: 20px; border: 2px solid #00ecb3; display: none; }
-        video { width: 100%; height: auto; display: block; }
+        /* Box khusus untuk preview di HP */
+        .preview-box { border-color: #ff4757; } 
+        
+        video { width: 100%; height: auto; display: block; background: #000; }
         .id-badge { background: #262636; padding: 15px; border-radius: 8px; font-weight: bold; color: #00ecb3; font-size: 20px; margin: 15px 0; border: 1px dashed #00ecb3; }
-        #statusLog { background: #262636; color: #ffcc00; padding: 10px; border-radius: 6px; margin-top: 10px; font-size: 14px; display: none; font-family: monospace; }
+        #statusLog { background: #262636; color: #ffcc00; padding: 10px; border-radius: 6px; margin-top: 10px; font-size: 14px; display: none; font-family: monospace; word-wrap: break-word; }
     </style>
 </head>
 <body>
@@ -31,12 +35,19 @@
             <button class="btn-viewer" onclick="initViewer()">📺 MULAI MENONTON</button>
         </div>
 
+        <!-- TAMPILAN JIKA JADI KAMERA (HP) -->
         <div id="cameraSection" style="display:none;">
-            <p>Kamera Aktif! Masukkan ID ini di perangkat penonton:</p>
+            <p>Masukkan ID ini di Laptop Anda:</p>
             <div class="id-badge" id="myId">Membuat ID...</div>
-            <p style="color: #ff4757; font-size: 12px;">⚠️ Jangan tutup browser HP Anda.</p>
+            <p style="color: #ff4757; font-size: 12px; margin-bottom:10px;">⚠️ Preview Aktif. Jangan tutup layar ini.</p>
+            
+            <!-- Video ini berfungsi ganda: sebagai preview angle & menjaga sistem HP tetap menyala -->
+            <div class="video-box preview-box" style="display:block;">
+                <video id="localVideo" autoplay playsinline muted></video>
+            </div>
         </div>
 
+        <!-- TAMPILAN JIKA JADI PENONTON (LAPTOP) -->
         <div id="videoSection" class="video-box">
             <video id="remoteVideo" autoplay playsinline controls muted></video>
         </div>
@@ -46,13 +57,11 @@
         let peer;
         let localStream;
 
-        // PERBAIKAN: Menggunakan 'urls' (sesuai standar wajib browser HP saat ini)
         const peerConfig = {
             config: {
                 'iceServers': [
                     { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' },
-                    { urls: 'stun:stun2.l.google.com:19302' }
+                    { urls: 'stun:stun1.l.google.com:19302' }
                 ]
             }
         };
@@ -61,6 +70,7 @@
             const logBox = document.getElementById('statusLog');
             logBox.style.display = 'block';
             logBox.innerText = "Status: " + pesan;
+            console.log("Status:", pesan);
         }
 
         window.onload = () => {
@@ -71,47 +81,56 @@
                 document.getElementById('menu').style.display = 'none';
                 document.getElementById('mainTitle').style.display = 'none';
                 document.getElementById('targetId').value = autoViewId;
-                logStatus("Memicu koneksi otomatis dari Link...");
-                setTimeout(() => { initViewer(); }, 1500);
+                logStatus("Memicu koneksi otomatis...");
+                setTimeout(() => { initViewer(); }, 1000);
             }
         };
 
         async function initCamera() {
             document.getElementById('menu').style.display = 'none';
             document.getElementById('cameraSection').style.display = 'block';
-            logStatus("Membuka kamera HP...");
+            logStatus("Meminta izin kamera...");
 
             try {
-                // PERBAIKAN: Mengembalikan audio ke 'true' agar tidak ditolak sistem Android/iOS
+                // Minta akses kamera belakang
                 localStream = await navigator.mediaDevices.getUserMedia({ 
                     video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } }, 
                     audio: true 
                 });
                 
-                peer = new Peer(peerConfig);
+                // Tampilkan video di layar HP agar bisa "dikontrol" angle-nya
+                document.getElementById('localVideo').srcObject = localStream;
+                logStatus("Kamera menyala. Membuat server...");
+
+                peer = new Peer(null, peerConfig);
                 
                 peer.on('open', (id) => {
                     document.getElementById('myId').innerText = id;
-                    logStatus("Kamera online & standby.");
+                    logStatus("Kamera standby. Menunggu Laptop...");
                 });
 
                 peer.on('connection', (conn) => {
-                    logStatus("Ada penonton terhubung...");
+                    logStatus("Laptop mencoba menyambung...");
+                    
+                    conn.on('open', () => {
+                        logStatus("Jalur data terhubung!");
+                    });
+
                     conn.on('data', (data) => {
                         if(data === 'minta_video') {
+                            logStatus("Permintaan diterima. Mengirim video...");
                             peer.call(conn.peer, localStream);
                         }
                     });
                 });
 
                 peer.on('error', (err) => {
-                    logStatus("Error: " + err.type);
-                    alert("Koneksi Terputus: " + err.type);
+                    logStatus("Error Peer: " + err.type);
                 });
 
             } catch (err) {
-                logStatus("Gagal akses kamera: " + err.message);
-                alert("Tolong izinkan akses kamera & mic HP Anda! Error: " + err.message);
+                logStatus("Akses Ditolak: " + err.message);
+                alert("Gagal. Pastikan Anda memberi izin kamera!");
             }
         }
 
@@ -120,28 +139,30 @@
             if(!targetId) return alert("Masukkan ID Kamera!");
             
             document.getElementById('menu').style.display = 'none';
-            logStatus("Menghubungkan ke jaringan...");
+            logStatus("Mempersiapkan jaringan...");
             
-            peer = new Peer(peerConfig);
+            peer = new Peer(null, peerConfig);
 
             peer.on('open', () => {
-                logStatus("Mencari Kamera dengan ID: " + targetId);
-                const conn = peer.connect(targetId);
+                logStatus("Mengetuk pintu ID: " + targetId);
+                // reliable: true memastikan perintah tidak hilang di jalan
+                const conn = peer.connect(targetId, { reliable: true });
                 
                 conn.on('open', () => {
-                    logStatus("Kamera ditemukan! Menarik video...");
+                    logStatus("Pintu terbuka! Meminta video...");
                     conn.send('minta_video');
                 });
             });
 
             peer.on('call', (call) => {
-                logStatus("Menerima streaming video...");
-                call.answer();
+                logStatus("Menerima panggilan video...");
+                call.answer(); // Jawab tanpa mengirim video balik
+                
                 call.on('stream', (remoteStream) => {
-                    logStatus("Koneksi Sukses!");
+                    logStatus("KONEKSI SUKSES!");
                     setTimeout(() => { document.getElementById('statusLog').style.display = 'none'; }, 2000);
-                    document.getElementById('videoSection').style.display = 'block';
                     
+                    document.getElementById('videoSection').style.display = 'block';
                     const video = document.getElementById('remoteVideo');
                     video.srcObject = remoteStream;
                 });
@@ -149,7 +170,7 @@
 
             peer.on('error', (err) => {
                 logStatus("Koneksi Gagal: " + err.type);
-                alert("Gagal terhubung. Pastikan Kamera HP masih menyala.");
+                alert("Gagal terhubung. Pastikan Kamera HP masih menyala dan ID benar.");
             });
         }
     </script>
